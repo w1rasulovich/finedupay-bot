@@ -1,88 +1,56 @@
-import asyncio
+import os
+import logging
+from aiogram import Bot, Dispatcher, executor, types
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 import google.generativeai as genai
-from aiogram import Bot, Dispatcher, types, F
-from aiogram.filters import Command
-from aiogram.utils.keyboard import ReplyKeyboardBuilder
 
-# 1. SIZNING KALITLARINGIZ
-TELEGRAM_TOKEN = "8222316371:AAFVH8QgxQmd5JF2pleAEXtxnLcaUzQIDrc"
-GEMINI_API_KEY = "AIzaSyCgLdp3vzZJcyXjRskGlaap7Ki_st38nSE"
+# 1. Sozlamalar (Environment Variables'dan oladi)
+API_TOKEN = os.getenv("BOT_TOKEN")
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
-# AI (Gemini) ni sozlash
-genai.configure(api_key=GEMINI_API_KEY)
+# AI ni sozlash
+genai.configure(api_key=GOOGLE_API_KEY)
 model = genai.GenerativeModel('gemini-pro')
 
-bot = Bot(token=TELEGRAM_TOKEN)
-dp = Dispatcher()
+# Loglarni ko'rish
+logging.basicConfig(level=logging.INFO)
 
-# ASOSIY TUGMALARNI YARATISH
+bot = Bot(token=API_TOKEN)
+dp = Dispatcher(bot)
+
+# 2. Tugmalar (Keyboard)
 def get_main_menu():
-    builder = ReplyKeyboardBuilder()
-    builder.row(types.KeyboardButton(text="💰 Pul tejash sirlari"))
-    builder.row(types.KeyboardButton(text="📈 Investitsiya nima?"))
-    builder.row(types.KeyboardButton(text="🤖 AI maslahatchi (Erkin muloqot)"))
-    return builder.as_markup(resize_keyboard=True)
+    keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
+    btn1 = KeyboardButton("🤖 AI Maslahatchi")
+    btn2 = KeyboardButton("💰 Moliyaviy darslar")
+    btn3 = KeyboardButton("📊 Statistika")
+    keyboard.add(btn1).add(btn2, btn3)
+    return keyboard
 
-# /start BUYRUG'I
-@dp.message(Command("start"))
-async def start_handler(message: types.Message):
-    welcome_text = (
-        "Assalomu alaykum! **FinEduPay AI** botiga xush kelibsiz! ✨\n\n"
-        "Men sizga moliyaviy savodxonlikni o'rganishda yordam beraman. "
-        "Quyidagi bo'limlardan birini tanlang yoki o'zingizni qiziqtirgan savolni yozing:"
+# 3. Start komandasi
+@dp.message_handler(commands=['start'])
+async def send_welcome(message: types.Message):
+    await message.reply(
+        "Salom! Bu moliyaviy savodxonlik botining yangilangan talqini. \n"
+        "Quyidagi tugmalardan birini tanlang:",
+        reply_markup=get_main_menu()
     )
-    await message.answer(welcome_text, reply_markup=get_main_menu(), parse_mode="Markdown")
 
-# TEZKOR JAVOB: PUL TEJASH
-@dp.message(F.text == "💰 Pul tejash sirlari")
-async def saving_tips(message: types.Message):
-    text = (
-        "✅ **Pul tejashning 3 ta oltin qoidasi:**\n\n"
-        "1. **50/30/20 qoidasi:** Daromadning 50% ehtiyojlarga, 30% xohishlarga, 20% jamg'armaga.\n"
-        "2. **Avval o'zingizga to'lang:** Maosh olishingiz bilan jamg'arma qismni olib qo'ying.\n"
-        "3. **Mayda sarf-xarajatlarni nazorat qiling:** Har kungi qahva yoki shirinlik bir oyda katta summa bo'lishi mumkin."
-    )
-    await message.answer(text, parse_mode="Markdown")
-
-# TEZKOR JAVOB: INVESTITSIYA
-@dp.message(F.text == "📈 Investitsiya nima?")
-async def invest_info(message: types.Message):
-    text = (
-        "📈 **Investitsiya haqida qisqacha:**\n\n"
-        "Investitsiya — bu pulni hozir ishlatmasdan, kelajakda ko'payib qaytishi uchun biror aktivga yo'naltirishdir.\n\n"
-        "**Asosiy turlari:**\n"
-        "🔹 Bank omonatlari (xavfsiz)\n"
-        "🔹 Ko'chmas mulk\n"
-        "🔹 Aksiyalar va Obligatsiyalar\n"
-        "🔹 Shaxsiy bilim (eng yaxshi investitsiya!)"
-    )
-    await message.answer(text, parse_mode="Markdown")
-
-# AI BILAN MULOQOT (ERKIN SAVOLLAR UCHUN)
-@dp.message()
+# 4. AI bilan muloqot qismi
+@dp.message_handler(lambda message: message.text == "🤖 AI Maslahatchi")
 async def ai_handler(message: types.Message):
-    # Bot yozayotganini ko'rsatish
-    await bot.send_chat_action(chat_id=message.chat.id, action="typing")
-    
+    await message.answer("Men tayyorman! Moliyaviy savolingizni yozing (masalan: Pulni qanday tejash mumkin?):")
+
+@dp.message_handler()
+async def chat_with_ai(message: types.Message):
+    # Agar foydalanuvchi tugmalardan tashqari narsa yozsa, AI javob beradi
+    msg = await message.answer("O'ylayapman... 🤔")
     try:
-        # AI ga ko'rsatma (Prompt)
-        prompt = (
-            f"Sen moliyaviy savodxonlik bo'yicha ekspert asistentisan. "
-            f"Foydalanuvchining quyidagi savoliga o'zbek tilida qisqa, tushunarli va professional javob ber. "
-            f"Savol: {message.text}"
-        )
-        
-        response = model.generate_content(prompt)
-        await message.answer(response.text)
-        
+        response = model.generate_content(message.text)
+        await msg.edit_text(response.text)
     except Exception as e:
-        print(f"Xato: {e}")
-        await message.answer("Hozircha javob bera olmayapman. Birozdan so'ng qayta urinib ko'ring.")
+        await msg.edit_text("Hozircha javob bera olmayman, birozdan keyin urinib ko'ring.")
+        logging.error(f"AI Error: {e}")
 
-# BOTNI ISHGA TUSHIRISH
-async def main():
-    print("✅ Bot serverda muvaffaqiyatli ishga tushdi!")
-    await dp.start_polling(bot)
-
-if __name__ == "__main__":
-    asyncio.run(main())
+if __name__ == '__main__':
+    executor.start_polling(dp, skip_updates=True)
